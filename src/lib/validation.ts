@@ -23,6 +23,10 @@ export const updateTicketSchema = z.object({
   finalResponse: z.string().trim().min(1).optional(),
 });
 
+export const draftTicketSchema = z.object({
+  redraft: z.boolean().optional().default(false),
+});
+
 export const approveTicketSchema = z.object({
   reviewerCode: z.string().min(1),
   reviewerRole: z.enum(["team_leader", "manager"]),

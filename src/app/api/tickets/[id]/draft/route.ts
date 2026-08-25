@@ -3,6 +3,7 @@ import { generateTicketDraft } from "@/lib/ai";
 import { retrievePolicyGrounding } from "@/lib/policies";
 import { evaluateDraftSafety } from "@/lib/safety";
 import { getTicket, updateTicket } from "@/lib/store";
+import { draftTicketSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -10,9 +11,11 @@ type RouteContext = {
   params: Promise<{ id: string }>;
 };
 
-export async function POST(_request: Request, { params }: RouteContext) {
+export async function POST(request: Request, { params }: RouteContext) {
   try {
     const { id } = await params;
+    const payload = await request.json().catch(() => ({}));
+    const { redraft } = draftTicketSchema.parse(payload);
     const ticket = await getTicket(id);
 
     if (!ticket) {
@@ -20,7 +23,7 @@ export async function POST(_request: Request, { params }: RouteContext) {
     }
 
     const policyGrounding = retrievePolicyGrounding(ticket);
-    const draft = await generateTicketDraft(ticket, policyGrounding);
+    const draft = await generateTicketDraft(ticket, policyGrounding, { redraft });
     const safety = evaluateDraftSafety(
       {
         intent: draft.intent,

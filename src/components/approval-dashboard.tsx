@@ -551,6 +551,7 @@ export function ApprovalDashboard() {
     try {
       const data = await requestJson<TicketResponse>(`/api/tickets/${selected.id}/draft`, {
         method: "POST",
+        body: JSON.stringify({ redraft: Boolean(selected.aiDraft) }),
       });
       upsertTicket(data.ticket);
       setDraftTextById((current) => ({
@@ -566,7 +567,7 @@ export function ApprovalDashboard() {
             ? `Draft created with ${safety.severity} safety review.`
             : ["gemini", "groq", "anthropic", "zai"].includes(data.ticket.aiProvider ?? "")
               ? `${data.ticket.aiProvider} drafted the response.`
-              : "Fallback draft generated because live AI is not configured.",
+              : "Live AI failed. Check the model/API configuration shown in Evidence before trying again.",
         tone:
           safety && safety.severity !== "none"
             ? "warn"

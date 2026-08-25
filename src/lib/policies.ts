@@ -70,10 +70,11 @@ function includesPolicyTerm(searchText: string, term: string) {
 
 function ticketSearchText(ticket: TicketRecord) {
   const hasClassificationSignal =
-    ticket.status !== "new" ||
-    ticket.intent !== "general_support" ||
-    ticket.priority !== "normal" ||
-    ticket.sentiment !== "neutral";
+    ticket.source !== "manual" &&
+    (ticket.status !== "new" ||
+      ticket.intent !== "general_support" ||
+      ticket.priority !== "normal" ||
+      ticket.sentiment !== "neutral");
 
   return [
     ticket.subject,
@@ -90,10 +91,11 @@ function scorePolicy(ticket: TicketRecord, policy: PolicyRecord, searchText: str
   const matchedTerms = new Set<string>();
   let score = policy.alwaysInclude ? 2 : 0;
   const hasClassificationSignal =
-    ticket.status !== "new" ||
-    ticket.intent !== "general_support" ||
-    ticket.priority !== "normal" ||
-    ticket.sentiment !== "neutral";
+    ticket.source !== "manual" &&
+    (ticket.status !== "new" ||
+      ticket.intent !== "general_support" ||
+      ticket.priority !== "normal" ||
+      ticket.sentiment !== "neutral");
 
   const intentMatches = hasClassificationSignal && policy.intents.includes(ticket.intent);
 

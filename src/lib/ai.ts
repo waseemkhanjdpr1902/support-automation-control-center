@@ -466,7 +466,7 @@ function policyPrompt(grounding?: PolicyGrounding) {
   ].join("\n\n");
 }
 
-function ticketPrompt(ticket: TicketRecord, grounding?: PolicyGrounding) {
+function ticketPrompt(ticket: TicketRecord, grounding?: PolicyGrounding, redraft = false) {
   const requestedTone =
     typeof ticket.metadata?.responseTone === "string"
       ? ticket.metadata.responseTone
@@ -480,65 +480,74 @@ function ticketPrompt(ticket: TicketRecord, grounding?: PolicyGrounding) {
     `Requested response tone: ${requestedTone}`,
     `Internal metadata:\n${JSON.stringify(ticket.metadata ?? {}, null, 2)}`,
     `Approved policy context:\n${policyPrompt(grounding)}`,
+    redraft
+      ? `Redraft instruction: Produce a materially improved version. Do not repeat the prior wording. Address every distinct issue and requested action in the customer email. Prior draft for improvement only:\n${ticket.finalResponse ?? ticket.aiDraft ?? "No prior draft"}`
+      : "Draft instruction: Address every distinct issue and requested action in the customer email.",
   ].join("\n\n");
 }
 
 const draftSystemPrompt =
-  "You are a senior fintech customer-support email coach. Classify the customer's actual purpose and draft a context-specific response for human review. Return only valid JSON with keys: intent, sentiment, priority, draft. Use exact enum values. intent must be one of refund_request, billing_issue, angry_complaint, lead_inquiry, technical_support, general_support. sentiment must be one of positive, neutral, frustrated, angry. Do not label a routine business request as frustrated merely because it mentions a mistake, and do not label it as a lead unless the sender is asking to buy, evaluate, price, demo, or implement a product. priority must be one of low, normal, high, urgent. Follow the requested tone. Preserve important facts, names, percentages, products, and requested actions from the customer message. Do not invent account findings, transaction status, deadlines, approvals, policies, or commitments. Where verification is needed, acknowledge the request and state the next safe action. Keep the response concise, polished, respectful, and ready to paste into email. Ground it in approved policy context without revealing internal policy IDs. Never use placeholders such as [Your Name]; sign as Support Operations Team.";
+  "You are a senior fintech customer-support email coach. Classify the customer's actual purpose and draft a context-specific response for human review. Return only valid JSON with keys: intent, sentiment, priority, draft. Use exact enum values. intent must be one of refund_request, billing_issue, angry_complaint, lead_inquiry, technical_support, general_support. sentiment must be one of positive, neutral, frustrated, angry. Do not label a routine business request as frustrated merely because it mentions a mistake, and do not label it as a lead unless the sender is asking to buy, evaluate, price, demo, or implement a product. priority must be one of low, normal, high, urgent. Follow the requested tone. Preserve important facts, names, dates, percentages, account references, products, and requested actions from the customer message. For complaints, acknowledge the experience and then explicitly list or clearly cover each operational issue and each remedy requested. Never write a vague acknowledgement that could apply to any email. Do not invent account findings, transaction status, deadlines, approvals, policies, or commitments. Where verification is needed, say exactly what will be checked and which requested item needs action, without claiming it has already happened. Keep the response polished, respectful, and ready to paste into email. Ground it in approved policy context without revealing internal policy IDs. Never use placeholders such as [Your Name]; sign as Support Operations Team.";
 
 async function generateWithOpenAiCompatible(
   ticket: TicketRecord,
   grounding: PolicyGrounding | undefined,
-  options: { provider: "groq"; apiKey: string; model: string; baseUrl: string },
+  options: { provider: "groq"; apiKey: string; model: string; baseUrl: string; redraft?: boolean },
 ): Promise<DraftResult> {
   const startedAt = Date.now();
-  try {
-    const response = await fetch(`${options.baseUrl.replace(/\/$/, "")}/chat/completions`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${options.apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: options.model,
-        temperature: 0.15,
-        max_tokens: 1200,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: draftSystemPrompt },
-          { role: "user", content: ticketPrompt(ticket, grounding) },
-        ],
-      }),
-    });
-    const payload = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-      error?: { message?: string };
-      usage?: unknown;
-    };
-    if (!response.ok) throw new Error(payload.error?.message ?? `Groq request failed with ${response.status}`);
-    const parsed = aiResponseSchema.parse(extractJson(payload.choices?.[0]?.message?.content ?? ""));
-    const { classification, adjustments } = normalizeClassification(ticket, parsed);
-    return withRunMetadata(
-      {
-        ...parsed,
-        ...classification,
-        draft: cleanDraftText(parsed.draft),
-        provider: options.provider,
-        model: options.model,
-        policySourceIds: grounding?.citations.map((citation) => citation.id),
-      },
-      startedAt,
-      routeReasonWithAdjustments(`AI_PROVIDER=groq routed to ${options.model}.`, adjustments),
-      normalizeOpenAiUsage(payload.usage),
-    );
-  } catch (error) {
-    const note = error instanceof Error ? error.message : "Groq generation failed.";
-    return withRunMetadata(
-      fallbackDraft(ticket, "fallback_after_error", note, grounding),
-      startedAt,
-      "Groq request failed; deterministic fallback used.",
-    );
+  const models = [...new Set([options.model, "openai/gpt-oss-20b"])];
+  let lastError = "Groq generation failed.";
+
+  for (const model of models) {
+    try {
+      const response = await fetch(`${options.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${options.apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          temperature: 0.15,
+          max_tokens: 1200,
+          response_format: { type: "json_object" },
+          messages: [
+            { role: "system", content: draftSystemPrompt },
+            { role: "user", content: ticketPrompt(ticket, grounding, options.redraft) },
+          ],
+        }),
+      });
+      const payload = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+        error?: { message?: string };
+        usage?: unknown;
+      };
+      if (!response.ok) throw new Error(payload.error?.message ?? `Groq request failed with ${response.status}`);
+      const parsed = aiResponseSchema.parse(extractJson(payload.choices?.[0]?.message?.content ?? ""));
+      const { classification, adjustments } = normalizeClassification(ticket, parsed);
+      return withRunMetadata(
+        {
+          ...parsed,
+          ...classification,
+          draft: cleanDraftText(parsed.draft),
+          provider: options.provider,
+          model,
+          policySourceIds: grounding?.citations.map((citation) => citation.id),
+        },
+        startedAt,
+        routeReasonWithAdjustments(`AI_PROVIDER=groq routed to ${model}.`, adjustments),
+        normalizeOpenAiUsage(payload.usage),
+      );
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : "Groq generation failed.";
+    }
   }
+
+  return withRunMetadata(
+    fallbackDraft(ticket, "fallback_after_error", lastError, grounding),
+    startedAt,
+    "All Groq model attempts failed; deterministic fallback used.",
+  );
 }
 
-async function generateWithGemini(ticket: TicketRecord, grounding?: PolicyGrounding): Promise<DraftResult> {
+async function generateWithGemini(ticket: TicketRecord, grounding?: PolicyGrounding, redraft = false): Promise<DraftResult> {
   const startedAt = Date.now();
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   if (!apiKey) {
@@ -547,8 +556,9 @@ async function generateWithGemini(ticket: TicketRecord, grounding?: PolicyGround
       return generateWithOpenAiCompatible(ticket, grounding, {
         provider: "groq",
         apiKey: groqKey,
-        model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
+        model: process.env.GROQ_MODEL || "openai/gpt-oss-20b",
         baseUrl: "https://api.groq.com/openai/v1",
+        redraft,
       });
     }
     return withRunMetadata(
@@ -567,7 +577,7 @@ async function generateWithGemini(ticket: TicketRecord, grounding?: PolicyGround
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: draftSystemPrompt }] },
-          contents: [{ role: "user", parts: [{ text: ticketPrompt(ticket, grounding) }] }],
+          contents: [{ role: "user", parts: [{ text: ticketPrompt(ticket, grounding, redraft) }] }],
           generationConfig: { temperature: 0.15, maxOutputTokens: 1200, responseMimeType: "application/json" },
         }),
       },
@@ -604,8 +614,9 @@ async function generateWithGemini(ticket: TicketRecord, grounding?: PolicyGround
       return generateWithOpenAiCompatible(ticket, grounding, {
         provider: "groq",
         apiKey: groqKey,
-        model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
+        model: process.env.GROQ_MODEL || "openai/gpt-oss-20b",
         baseUrl: "https://api.groq.com/openai/v1",
+        redraft,
       });
     }
     const note = error instanceof Error ? error.message : "Gemini generation failed.";
@@ -755,6 +766,7 @@ async function generateWithAnthropic(ticket: TicketRecord, grounding?: PolicyGro
 export async function generateTicketDraft(
   ticket: TicketRecord,
   grounding?: PolicyGrounding,
+  options: { redraft?: boolean } = {},
 ): Promise<DraftResult> {
   const provider =
     process.env.AI_PROVIDER ||
@@ -772,16 +784,17 @@ export async function generateTicketDraft(
     return generateWithZai(ticket, grounding);
   }
 
-  if (provider === "gemini") return generateWithGemini(ticket, grounding);
+  if (provider === "gemini") return generateWithGemini(ticket, grounding, options.redraft);
 
   if (provider === "groq") {
     const apiKey = process.env.GROQ_API_KEY;
-    if (!apiKey) return generateWithGemini(ticket, grounding);
+    if (!apiKey) return generateWithGemini(ticket, grounding, options.redraft);
     return generateWithOpenAiCompatible(ticket, grounding, {
       provider: "groq",
       apiKey,
-      model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
+      model: process.env.GROQ_MODEL || "openai/gpt-oss-20b",
       baseUrl: "https://api.groq.com/openai/v1",
+      redraft: options.redraft,
     });
   }
 
