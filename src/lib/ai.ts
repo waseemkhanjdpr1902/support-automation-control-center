@@ -344,6 +344,12 @@ function routeReasonWithAdjustments(routeReason: string, adjustments: string[]) 
 
 function cleanDraftText(draft: string) {
   return draft
+    .replace(/^Subject:\s*[^\n]+\n+/i, "")
+    .replace(
+      /I(?:'|’)ve attached the account closure form to this email\./gi,
+      "We will verify the applicable closure process and arrange for the account closure form to be provided.",
+    )
+    .replace(/Kind Best,/gi, "Regards,")
     .replace(/\[(?:your name|name|agent name|support rep|representative)\]/gi, "Support Operations Team")
     .replace(/(?:best regards|regards|sincerely),?\s*\nSupport Operations Team\s*$/i, "Best,\nSupport Operations Team")
     .trim();
@@ -487,7 +493,7 @@ function ticketPrompt(ticket: TicketRecord, grounding?: PolicyGrounding, redraft
 }
 
 const draftSystemPrompt =
-  "You are a senior fintech customer-support email coach. Classify the customer's actual purpose and draft a context-specific response for human review. Return only valid JSON with keys: intent, sentiment, priority, draft. Use exact enum values. intent must be one of refund_request, billing_issue, angry_complaint, lead_inquiry, technical_support, general_support. sentiment must be one of positive, neutral, frustrated, angry. Do not label a routine business request as frustrated merely because it mentions a mistake, and do not label it as a lead unless the sender is asking to buy, evaluate, price, demo, or implement a product. priority must be one of low, normal, high, urgent. Follow the requested tone. Preserve important facts, names, dates, percentages, account references, products, and requested actions from the customer message. For complaints, acknowledge the experience and then explicitly list or clearly cover each operational issue and each remedy requested. Never write a vague acknowledgement that could apply to any email. Do not invent account findings, transaction status, deadlines, approvals, policies, or commitments. Where verification is needed, say exactly what will be checked and which requested item needs action, without claiming it has already happened. Keep the response polished, respectful, and ready to paste into email. Ground it in approved policy context without revealing internal policy IDs. Never use placeholders such as [Your Name]; sign as Support Operations Team.";
+  "You are a senior fintech customer-support email coach. Classify the customer's actual purpose and draft a context-specific response for human review. Return only valid JSON with keys: intent, sentiment, priority, draft. Use exact enum values. intent must be one of refund_request, billing_issue, angry_complaint, lead_inquiry, technical_support, general_support. sentiment must be one of positive, neutral, frustrated, angry. Do not label a routine business request as frustrated merely because it mentions a mistake, and do not label it as a lead unless the sender is asking to buy, evaluate, price, demo, or implement a product. priority must be one of low, normal, high, urgent. Follow the requested tone. Preserve important facts, names, dates, percentages, account references, products, and requested actions from the customer message. For complaints, acknowledge the experience and then explicitly list or clearly cover each operational issue and each remedy requested. Never write a vague acknowledgement that could apply to any email. Do not invent account findings, transaction status, deadlines, approvals, policies, commitments, attachments, escalations, refunds, or completed actions. Never say a document is attached, enclosed, shared, sent, escalated, initiated, or processed unless the input explicitly confirms that action. Where verification is needed, say exactly what will be checked and which requested item needs action, without claiming it has already happened. Return only the email body, without a Subject line. Keep the response polished, respectful, and ready to paste into email. Ground it in approved policy context without revealing internal policy IDs. Never use placeholders such as [Your Name]; sign as Support Operations Team.";
 
 async function generateWithOpenAiCompatible(
   ticket: TicketRecord,
