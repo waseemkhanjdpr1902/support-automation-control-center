@@ -58,14 +58,7 @@ const globalMemory = globalThis as unknown as {
 
 function memoryState() {
   if (!globalMemory.supportAgentMemory) {
-    globalMemory.supportAgentMemory = { tickets: [], seeded: false };
-  }
-
-  if (!globalMemory.supportAgentMemory.seeded) {
-    globalMemory.supportAgentMemory.tickets = sampleTickets.map((ticket, index) =>
-      makeMemoryTicket(ticket, index),
-    );
-    globalMemory.supportAgentMemory.seeded = true;
+    globalMemory.supportAgentMemory = { tickets: [], seeded: true };
   }
 
   return globalMemory.supportAgentMemory;
@@ -209,13 +202,16 @@ function fromPrisma(ticket: PrismaTicket): TicketRecord {
 export async function listTickets() {
   if (shouldUsePrisma()) {
     const tickets = await prisma.ticket.findMany({
+      where: { source: { not: "demo" } },
       orderBy: { createdAt: "desc" },
       include: { auditEvents: { orderBy: { createdAt: "desc" } } },
     });
     return tickets.map((ticket) => fromPrisma(ticket as PrismaTicket));
   }
 
-  return [...memoryState().tickets].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return memoryState().tickets
+    .filter((ticket) => ticket.source !== "demo")
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 export async function getTicket(id: string) {

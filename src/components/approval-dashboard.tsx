@@ -345,9 +345,6 @@ export function ApprovalDashboard() {
   const [filter, setFilter] = useState<FilterKey>("all");
   const [activeEvidenceTab, setActiveEvidenceTab] = useState<EvidenceTab>("run");
   const [manualEmail, setManualEmail] = useState("");
-  const [manualSubject, setManualSubject] = useState("");
-  const [manualCustomer, setManualCustomer] = useState("");
-  const [responseTone, setResponseTone] = useState("professional");
   const [reviewerRole, setReviewerRole] = useState<"team_leader" | "manager">("team_leader");
   const [reviewerCode, setReviewerCode] = useState("");
   const [reviewNote, setReviewNote] = useState("");
@@ -433,23 +430,6 @@ export function ApprovalDashboard() {
     }
   }
 
-  async function seedSamples() {
-    setBusy("seed");
-    try {
-      const data = await requestJson<TicketsResponse>("/api/samples/seed", { method: "POST" });
-      setTickets(data.tickets);
-      setSelectedId(data.tickets[0]?.id ?? null);
-      setActionState({ message: "Sample tickets loaded.", tone: "ok" });
-    } catch (error) {
-      setActionState({
-        message: error instanceof Error ? error.message : "Could not load sample tickets.",
-        tone: "error",
-      });
-    } finally {
-      setBusy(null);
-    }
-  }
-
   async function createManualDraft() {
     if (manualEmail.trim().length < 10) {
       setActionState({ message: "Paste the customer email before generating a draft.", tone: "warn" });
@@ -461,10 +441,8 @@ export function ApprovalDashboard() {
       const created = await requestJson<TicketResponse>("/api/tickets/manual", {
         method: "POST",
         body: JSON.stringify({
-          customerName: manualCustomer || undefined,
-          subject: manualSubject || undefined,
           body: manualEmail,
-          responseTone,
+          responseTone: "professional",
         }),
       });
       upsertTicket(created.ticket);
@@ -478,9 +456,7 @@ export function ApprovalDashboard() {
         [drafted.ticket.id]: drafted.ticket.finalResponse ?? drafted.ticket.aiDraft ?? "",
       }));
       setManualEmail("");
-      setManualSubject("");
-      setManualCustomer("");
-      setActionState({ message: "Draft generated from the pasted customer email.", tone: "ok" });
+      setActionState({ message: "Professional email draft generated.", tone: "ok" });
     } catch (error) {
       setActionState({
         message: error instanceof Error ? error.message : "Could not generate the draft.",
@@ -660,15 +636,6 @@ export function ApprovalDashboard() {
                 <RefreshCw className={clsx("size-4", busy === "load" && "animate-spin")} />
                 Refresh
               </button>
-              <button
-                className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={seedSamples}
-                disabled={busy !== null}
-                title="Load sample tickets"
-              >
-                <Database className="size-4" />
-                Samples
-              </button>
             </div>
           </div>
 
@@ -705,47 +672,24 @@ export function ApprovalDashboard() {
         <section className="rounded-md border border-slate-200 bg-white shadow-sm lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:overflow-hidden">
           <div className="border-b border-slate-200 bg-teal-50/60 p-4">
             <div className="mb-3">
-              <p className="font-semibold text-slate-950">Paste customer email</p>
-              <p className="mt-1 text-xs leading-5 text-slate-600">No mailbox connection is required. Customer details are optional.</p>
+              <p className="font-semibold text-slate-950">Paste the customer email body</p>
+              <p className="mt-1 text-xs leading-5 text-slate-600">Paste only the received email content. No name, email address, subject, or mailbox connection is required.</p>
             </div>
             <div className="space-y-2">
-              <input
-                className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
-                value={manualCustomer}
-                onChange={(event) => setManualCustomer(event.target.value)}
-                placeholder="Customer name (optional)"
-              />
-              <input
-                className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
-                value={manualSubject}
-                onChange={(event) => setManualSubject(event.target.value)}
-                placeholder="Email subject (optional)"
-              />
               <textarea
-                className="min-h-32 w-full resize-y rounded-md border border-slate-200 bg-white p-3 text-sm leading-6 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                className="min-h-52 w-full resize-y rounded-md border border-slate-200 bg-white p-3 text-sm leading-6 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
                 value={manualEmail}
                 onChange={(event) => setManualEmail(event.target.value)}
-                placeholder="Paste the complete customer email here…"
+                placeholder="Paste the customer’s email body/content here…"
               />
-              <div className="grid grid-cols-[1fr_auto] gap-2">
-                <select
-                  className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-teal-500"
-                  value={responseTone}
-                  onChange={(event) => setResponseTone(event.target.value)}
-                >
-                  <option value="professional">Professional</option>
-                  <option value="empathetic">Empathetic</option>
-                  <option value="apology">Apology</option>
-                  <option value="firm">Firm</option>
-                  <option value="escalation">Escalation</option>
-                </select>
+              <div className="flex justify-end">
                 <button
-                  className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-teal-700 px-4 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-60"
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-teal-700 px-5 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-60"
                   onClick={createManualDraft}
                   disabled={busy !== null || manualEmail.trim().length < 10}
                 >
                   {busy === "manual-draft" ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-                  Generate
+                  Generate Professional Draft
                 </button>
               </div>
             </div>
