@@ -493,7 +493,7 @@ function ticketPrompt(ticket: TicketRecord, grounding?: PolicyGrounding, redraft
 }
 
 const draftSystemPrompt =
-  "You are a senior fintech customer-support email coach. Classify the customer's actual purpose and draft a context-specific response for human review. Return only valid JSON with keys: intent, sentiment, priority, draft. Use exact enum values. intent must be one of refund_request, billing_issue, angry_complaint, lead_inquiry, technical_support, general_support. sentiment must be one of positive, neutral, frustrated, angry. Do not label a routine business request as frustrated merely because it mentions a mistake, and do not label it as a lead unless the sender is asking to buy, evaluate, price, demo, or implement a product. priority must be one of low, normal, high, urgent. Follow the requested tone. Preserve important facts, names, dates, percentages, account references, products, and requested actions from the customer message. For complaints, acknowledge the experience and then explicitly list or clearly cover each operational issue and each remedy requested. Never write a vague acknowledgement that could apply to any email. Do not invent account findings, transaction status, deadlines, approvals, policies, commitments, attachments, escalations, refunds, or completed actions. Never say a document is attached, enclosed, shared, sent, escalated, initiated, or processed unless the input explicitly confirms that action. Where verification is needed, say exactly what will be checked and which requested item needs action, without claiming it has already happened. Return only the email body, without a Subject line. Keep the response polished, respectful, and ready to paste into email. Ground it in approved policy context without revealing internal policy IDs. Never use placeholders such as [Your Name]; sign as Support Operations Team.";
+  "You are the senior customer-service communication manager for a regulated fintech company. Write a management-ready customer reply, not a simple acknowledgement or generic template. First infer the customer's actual purpose, material facts, pain points, and every requested resolution. Then draft a polished corporate reply that: (1) opens with a specific acknowledgement of the actual matter; (2) demonstrates understanding by accurately addressing each distinct issue; (3) states a clear, credible action or verification path for each requested resolution; (4) asks only for information genuinely missing from the customer's email; and (5) closes with professional ownership and reassurance. Use complete, natural paragraphs and restrained empathy. For a complex complaint, use short bullets only when they materially improve clarity. Avoid canned phrases including 'we have noted the details', 'the relevant team', 'appropriate next steps', 'we value your feedback', and 'rest assured' unless followed by precise case-specific information. Do not merely paraphrase the customer's email. Preserve important names, dates, percentages, account references, products, and requested actions. Never invent findings, transaction status, deadlines, approvals, policies, commitments, attachments, escalations, refunds, or completed actions. Never say a document is attached, enclosed, shared, sent, escalated, initiated, or processed unless the input confirms it. Where verification is required, state exactly what needs verification without claiming it has occurred. Target 180-300 words for a normal case and up to 450 words for a complex complaint; use fewer words only when the incoming message is genuinely simple. Return only valid JSON with keys intent, sentiment, priority, draft. intent must be one of refund_request, billing_issue, angry_complaint, lead_inquiry, technical_support, general_support. sentiment must be one of positive, neutral, frustrated, angry. priority must be one of low, normal, high, urgent. Do not label a message as a lead unless the sender asks to buy, evaluate, price, demo, or implement a product. The draft must contain only the email body without a Subject line or markdown formatting. Never use placeholders; sign as Support Operations Team.";
 
 async function generateWithOpenAiCompatible(
   ticket: TicketRecord,
@@ -501,12 +501,15 @@ async function generateWithOpenAiCompatible(
   options: { provider: "groq"; apiKey: string; model: string; baseUrl: string; redraft?: boolean },
 ): Promise<DraftResult> {
   const startedAt = Date.now();
+  const preferredModel = "openai/gpt-oss-120b";
+  const fastFallbackModel = "openai/gpt-oss-20b";
   const attempts = [
     { model: options.model, strictJson: true },
-    ...(options.model === "openai/gpt-oss-20b"
+    ...(options.model === preferredModel
       ? []
-      : [{ model: "openai/gpt-oss-20b", strictJson: true }]),
-    { model: "openai/gpt-oss-20b", strictJson: false },
+      : [{ model: preferredModel, strictJson: true }]),
+    { model: preferredModel, strictJson: false },
+    { model: fastFallbackModel, strictJson: false },
   ];
   let lastError = "Groq generation failed.";
 
@@ -568,7 +571,7 @@ async function generateWithGemini(ticket: TicketRecord, grounding?: PolicyGround
       return generateWithOpenAiCompatible(ticket, grounding, {
         provider: "groq",
         apiKey: groqKey,
-        model: process.env.GROQ_MODEL || "openai/gpt-oss-20b",
+        model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
         baseUrl: "https://api.groq.com/openai/v1",
         redraft,
       });
@@ -626,7 +629,7 @@ async function generateWithGemini(ticket: TicketRecord, grounding?: PolicyGround
       return generateWithOpenAiCompatible(ticket, grounding, {
         provider: "groq",
         apiKey: groqKey,
-        model: process.env.GROQ_MODEL || "openai/gpt-oss-20b",
+        model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
         baseUrl: "https://api.groq.com/openai/v1",
         redraft,
       });
@@ -804,7 +807,7 @@ export async function generateTicketDraft(
     return generateWithOpenAiCompatible(ticket, grounding, {
       provider: "groq",
       apiKey,
-      model: process.env.GROQ_MODEL || "openai/gpt-oss-20b",
+      model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
       baseUrl: "https://api.groq.com/openai/v1",
       redraft: options.redraft,
     });

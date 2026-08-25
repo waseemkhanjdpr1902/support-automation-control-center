@@ -24,6 +24,14 @@ export async function POST(request: Request, { params }: RouteContext) {
 
     const policyGrounding = retrievePolicyGrounding(ticket);
     const draft = await generateTicketDraft(ticket, policyGrounding, { redraft });
+
+    if (draft.provider === "fallback" || draft.provider === "fallback_after_error") {
+      return jsonError(
+        `A professional AI reply could not be generated. ${draft.note ?? "Check the AI API key and model configuration, then try again."}`,
+        503,
+      );
+    }
+
     const safety = evaluateDraftSafety(
       {
         intent: draft.intent,
