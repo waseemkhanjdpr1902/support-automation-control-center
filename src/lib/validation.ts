@@ -24,8 +24,15 @@ export const updateTicketSchema = z.object({
 });
 
 export const approveTicketSchema = z.object({
-  passcode: z.string().optional(),
+  reviewerCode: z.string().min(1),
+  reviewerRole: z.enum(["team_leader", "manager"]),
   finalResponse: z.string().trim().min(1).optional(),
+});
+
+export const returnTicketSchema = z.object({
+  reviewerCode: z.string().min(1),
+  reviewerRole: z.enum(["team_leader", "manager"]),
+  note: z.string().trim().min(3).max(500),
 });
 
 export type InboundTicketInput = z.infer<typeof inboundTicketSchema>;

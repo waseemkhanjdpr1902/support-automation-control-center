@@ -55,11 +55,21 @@ export function assertWebhookSecret(request: Request): SecretCheck {
   return { ok: true, mode: "verified" };
 }
 
-export function assertApprovalPasscode(passcode?: string) {
-  const expected = process.env.APPROVAL_PASSCODE || "local-approval-passcode";
+export function assertReviewerAccess(
+  role: "team_leader" | "manager",
+  code?: string,
+) {
+  const expected =
+    role === "manager"
+      ? process.env.MANAGER_REVIEW_CODE
+      : process.env.TEAM_LEADER_REVIEW_CODE;
 
-  if (!passcode || !safeCompare(passcode, expected)) {
-    return jsonError("Invalid approval passcode.", 401);
+  if (!expected) {
+    return jsonError(`Review access is not configured for ${role.replace("_", " ")}.`, 503);
+  }
+
+  if (!code || !safeCompare(code, expected)) {
+    return jsonError("Invalid reviewer access code.", 401);
   }
 
   return null;

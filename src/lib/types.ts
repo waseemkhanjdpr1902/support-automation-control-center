@@ -42,6 +42,8 @@ export const auditActions = [
   "ai_drafted",
   "safety_flagged",
   "draft_edited",
+  "submitted_for_review",
+  "returned_for_changes",
   "approved",
   "sent",
   "send_simulated",
@@ -95,7 +97,7 @@ export type DraftResult = {
   sentiment: TicketSentiment;
   priority: TicketPriority;
   draft: string;
-  provider: "anthropic" | "zai" | "fallback" | "fallback_after_error";
+  provider: "gemini" | "groq" | "anthropic" | "zai" | "fallback" | "fallback_after_error";
   model: string;
   latencyMs: number;
   inputTokens?: number;

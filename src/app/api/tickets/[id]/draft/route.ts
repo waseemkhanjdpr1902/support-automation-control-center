@@ -54,7 +54,7 @@ export async function POST(_request: Request, { params }: RouteContext) {
     const updated = await updateTicket(
       id,
       {
-        status: safety.severity === "none" ? "drafted" : "needs_review",
+        status: ticket.source === "manual" || safety.severity !== "none" ? "needs_review" : "drafted",
         intent: draft.intent,
         sentiment: draft.sentiment,
         priority: draft.priority,
@@ -68,9 +68,9 @@ export async function POST(_request: Request, { params }: RouteContext) {
         actor: draft.provider,
         message:
           safety.severity === "none"
-            ? draft.provider === "anthropic" || draft.provider === "zai"
-              ? `${draft.provider === "zai" ? "Z.ai GLM" : "Claude"} classified the message and drafted a response.`
-              : "Deterministic fallback generated a response for review."
+            ? ["gemini", "groq", "anthropic", "zai"].includes(draft.provider)
+              ? `${draft.provider} classified the message and drafted a response.`
+              : "Safe fallback generated a basic acknowledgement because live AI is not configured."
             : `Draft generated with ${safety.severity} safety review flag.`,
         metadata,
       },

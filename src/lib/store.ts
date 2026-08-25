@@ -118,7 +118,7 @@ function makeMemoryTicket(input: InboundTicketInput, index = 0): TicketRecord {
 }
 
 function normalizeSource(value: string): TicketSource {
-  const allowed: TicketSource[] = ["demo", "webhook", "gmail", "zendesk", "intercom", "lead_form"];
+  const allowed: TicketSource[] = ["manual", "demo", "webhook", "gmail", "zendesk", "intercom", "lead_form"];
   return allowed.includes(value as TicketSource) ? (value as TicketSource) : "webhook";
 }
 
@@ -164,6 +164,8 @@ function normalizeAction(value: string): AuditAction {
     "ai_drafted",
     "safety_flagged",
     "draft_edited",
+    "submitted_for_review",
+    "returned_for_changes",
     "approved",
     "sent",
     "send_simulated",

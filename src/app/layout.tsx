@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Human-in-the-Loop Support Agent",
   description:
-    "A safe AI support and lead routing dashboard with human approval before customer replies.",
+    "Paste a customer email, generate a fintech support draft, and route it to a Team Leader or Manager for approval before copying.",
 };
 
 export default function RootLayout({

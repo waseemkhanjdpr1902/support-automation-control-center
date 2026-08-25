@@ -9,6 +9,7 @@ import {
   Database,
   Edit3,
   Inbox,
+  KeyRound,
   Loader2,
   MailCheck,
   RefreshCw,
@@ -16,6 +17,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
+  Undo2,
   UserCheck,
   Workflow,
 } from "lucide-react";
@@ -346,6 +348,9 @@ export function ApprovalDashboard() {
   const [manualSubject, setManualSubject] = useState("");
   const [manualCustomer, setManualCustomer] = useState("");
   const [responseTone, setResponseTone] = useState("professional");
+  const [reviewerRole, setReviewerRole] = useState<"team_leader" | "manager">("team_leader");
+  const [reviewerCode, setReviewerCode] = useState("");
+  const [reviewNote, setReviewNote] = useState("");
 
   const metrics = useMemo(() => {
     const waiting = tickets.filter((ticket) => reviewStatuses.includes(ticket.status)).length;
@@ -488,11 +493,55 @@ export function ApprovalDashboard() {
 
   async function copyDraft() {
     if (!draftText.trim()) return;
+    if (selected?.status !== "approved") {
+      setActionState({ message: "Team Leader or Manager approval is required before copying.", tone: "warn" });
+      return;
+    }
     try {
       await navigator.clipboard.writeText(draftText);
       setActionState({ message: "Response copied. Paste it into your email application.", tone: "ok" });
     } catch {
       setActionState({ message: "Copy failed. Select the response text and copy it manually.", tone: "error" });
+    }
+  }
+
+  async function approveDraft() {
+    if (!selected || !draftText.trim()) return;
+    setBusy("approve");
+    try {
+      const data = await requestJson<TicketResponse>(`/api/tickets/${selected.id}/approve`, {
+        method: "POST",
+        body: JSON.stringify({ reviewerRole, reviewerCode, finalResponse: draftText }),
+      });
+      upsertTicket(data.ticket);
+      setReviewerCode("");
+      setActionState({ message: "Draft approved. The agent can now copy the response.", tone: "ok" });
+    } catch (error) {
+      setActionState({ message: error instanceof Error ? error.message : "Approval failed.", tone: "error" });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function returnDraft() {
+    if (!selected || reviewNote.trim().length < 3) {
+      setActionState({ message: "Enter a short review note before returning the draft.", tone: "warn" });
+      return;
+    }
+    setBusy("return");
+    try {
+      const data = await requestJson<TicketResponse>(`/api/tickets/${selected.id}/return`, {
+        method: "POST",
+        body: JSON.stringify({ reviewerRole, reviewerCode, note: reviewNote }),
+      });
+      upsertTicket(data.ticket);
+      setReviewerCode("");
+      setReviewNote("");
+      setActionState({ message: "Draft returned to the agent with review comments.", tone: "warn" });
+    } catch (error) {
+      setActionState({ message: error instanceof Error ? error.message : "Could not return draft.", tone: "error" });
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -515,13 +564,13 @@ export function ApprovalDashboard() {
         message:
           safety && safety.severity !== "none"
             ? `Draft created with ${safety.severity} safety review.`
-            : data.ticket.aiProvider === "anthropic" || data.ticket.aiProvider === "zai"
-              ? `${data.ticket.aiProvider === "zai" ? "Z.ai GLM" : "Claude"} drafted the response.`
+            : ["gemini", "groq", "anthropic", "zai"].includes(data.ticket.aiProvider ?? "")
+              ? `${data.ticket.aiProvider} drafted the response.`
               : "Fallback draft generated because live AI is not configured.",
         tone:
           safety && safety.severity !== "none"
             ? "warn"
-            : data.ticket.aiProvider === "anthropic" || data.ticket.aiProvider === "zai"
+            : ["gemini", "groq", "anthropic", "zai"].includes(data.ticket.aiProvider ?? "")
               ? "ok"
               : "warn",
       });
@@ -838,11 +887,61 @@ export function ApprovalDashboard() {
                         <button
                           className="inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md bg-slate-950 px-4 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                           onClick={copyDraft}
-                          disabled={busy !== null || !draftText.trim()}
+                          disabled={busy !== null || !draftText.trim() || selected.status !== "approved"}
                           title="Copy response"
                         >
                           <Clipboard className="size-4" />
                           Copy response
+                        </button>
+                      </div>
+                    </div>
+                    <div className="mt-5 rounded-md border border-slate-200 bg-slate-50 p-4">
+                      <div className="mb-3 flex items-center gap-2">
+                        <ShieldCheck className="size-4 text-teal-700" />
+                        <p className="text-sm font-semibold text-slate-950">Team Leader / Manager review</p>
+                      </div>
+                      <div className="grid gap-2 md:grid-cols-2">
+                        <select
+                          className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-teal-500"
+                          value={reviewerRole}
+                          onChange={(event) => setReviewerRole(event.target.value as "team_leader" | "manager")}
+                        >
+                          <option value="team_leader">Team Leader</option>
+                          <option value="manager">Manager</option>
+                        </select>
+                        <div className="flex h-10 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 focus-within:border-teal-500">
+                          <KeyRound className="size-4 text-slate-400" />
+                          <input
+                            className="min-w-0 flex-1 text-sm outline-none"
+                            type="password"
+                            value={reviewerCode}
+                            onChange={(event) => setReviewerCode(event.target.value)}
+                            placeholder="Reviewer access code"
+                          />
+                        </div>
+                      </div>
+                      <textarea
+                        className="mt-2 min-h-20 w-full rounded-md border border-slate-200 bg-white p-3 text-sm outline-none focus:border-teal-500"
+                        value={reviewNote}
+                        onChange={(event) => setReviewNote(event.target.value)}
+                        placeholder="Review note required only when returning for changes"
+                      />
+                      <div className="mt-3 flex flex-wrap justify-end gap-2">
+                        <button
+                          className="inline-flex h-10 items-center gap-2 rounded-md border border-amber-200 bg-white px-4 text-sm font-medium text-amber-800 hover:bg-amber-50 disabled:opacity-60"
+                          onClick={returnDraft}
+                          disabled={busy !== null || !reviewerCode || reviewNote.trim().length < 3}
+                        >
+                          {busy === "return" ? <Loader2 className="size-4 animate-spin" /> : <Undo2 className="size-4" />}
+                          Return for changes
+                        </button>
+                        <button
+                          className="inline-flex h-10 items-center gap-2 rounded-md bg-teal-700 px-4 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-60"
+                          onClick={approveDraft}
+                          disabled={busy !== null || !reviewerCode || !draftText.trim()}
+                        >
+                          {busy === "approve" ? <Loader2 className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />}
+                          Approve for agent
                         </button>
                       </div>
                     </div>
@@ -992,17 +1091,23 @@ function EvidenceRun({
         <SectionTitle icon={Route} title="Workflow run" />
         <div className="mt-3 grid gap-2">
           <EvidenceFact label="Source" value={displayLabel(selected.source)} />
-          <EvidenceFact
-            label="Webhook secret"
-            value={
-              webhookEvidence.security === "verified"
-                ? "verified"
-                : webhookEvidence.security === "not_configured"
-                  ? "dev mode"
-                  : "not captured"
-            }
-          />
-          <EvidenceFact label="n8n execution" value={webhookEvidence.executionId ?? "not captured"} />
+          {selected.source === "manual" ? (
+            <EvidenceFact label="Intake mode" value="Agent copy & paste" />
+          ) : (
+            <>
+              <EvidenceFact
+                label="Webhook secret"
+                value={
+                  webhookEvidence.security === "verified"
+                    ? "verified"
+                    : webhookEvidence.security === "not_configured"
+                      ? "dev mode"
+                      : "not captured"
+                }
+              />
+              <EvidenceFact label="n8n execution" value={webhookEvidence.executionId ?? "not captured"} />
+            </>
+          )}
         </div>
       </div>
 

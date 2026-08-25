@@ -1,10 +1,9 @@
 import {
-  assertApprovalPasscode,
+  assertReviewerAccess,
   handleRouteError,
   jsonError,
   jsonOk,
 } from "@/lib/api-utils";
-import { sendApprovedResponse } from "@/lib/email";
 import { evaluateDraftSafety } from "@/lib/safety";
 import { getTicket, updateTicket } from "@/lib/store";
 import { approveTicketSchema } from "@/lib/validation";
@@ -19,7 +18,7 @@ export async function POST(request: Request, { params }: RouteContext) {
   try {
     const { id } = await params;
     const payload = approveTicketSchema.parse(await request.json());
-    const authError = assertApprovalPasscode(payload.passcode);
+    const authError = assertReviewerAccess(payload.reviewerRole, payload.reviewerCode);
 
     if (authError) {
       return authError;
@@ -65,9 +64,9 @@ export async function POST(request: Request, { params }: RouteContext) {
       },
       {
         action: "approved",
-        actor: "human-reviewer",
-        message: "Human reviewer approved the final response.",
-        metadata: { safety },
+        actor: payload.reviewerRole,
+        message: `${payload.reviewerRole.replace("_", " ")} approved the response for agent copy.`,
+        metadata: { safety, reviewerRole: payload.reviewerRole },
       },
     );
 
@@ -75,27 +74,7 @@ export async function POST(request: Request, { params }: RouteContext) {
       return jsonError("Ticket not found.", 404);
     }
 
-    const sendResult = await sendApprovedResponse(approved);
-    const updated = await updateTicket(
-      id,
-      {
-        status: sendResult.status,
-        sendProvider: sendResult.provider,
-        sendResult: sendResult.result,
-      },
-      {
-        action:
-          sendResult.status === "sent"
-            ? "sent"
-            : sendResult.status === "simulated"
-              ? "send_simulated"
-              : "send_failed",
-        actor: sendResult.provider,
-        message: sendResult.result,
-      },
-    );
-
-    return jsonOk({ ticket: updated, sendResult });
+    return jsonOk({ ticket: approved });
   } catch (error) {
     return handleRouteError(error);
   }
