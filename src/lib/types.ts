@@ -9,6 +9,7 @@ export const ticketStatuses = [
 ] as const;
 
 export const ticketSources = [
+  "manual",
   "demo",
   "webhook",
   "gmail",

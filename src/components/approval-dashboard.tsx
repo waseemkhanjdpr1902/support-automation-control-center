@@ -4,16 +4,15 @@ import {
   Activity,
   Bot,
   CheckCircle2,
+  Clipboard,
   Clock3,
   Database,
   Edit3,
   Inbox,
-  KeyRound,
   Loader2,
   MailCheck,
   RefreshCw,
   Route,
-  Send,
   ShieldAlert,
   ShieldCheck,
   Sparkles,
@@ -339,11 +338,14 @@ export function ApprovalDashboard() {
   const [tickets, setTickets] = useState<TicketRecord[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draftTextById, setDraftTextById] = useState<Record<string, string>>({});
-  const [passcode, setPasscode] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [actionState, setActionState] = useState<ActionState | null>(null);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [activeEvidenceTab, setActiveEvidenceTab] = useState<EvidenceTab>("run");
+  const [manualEmail, setManualEmail] = useState("");
+  const [manualSubject, setManualSubject] = useState("");
+  const [manualCustomer, setManualCustomer] = useState("");
+  const [responseTone, setResponseTone] = useState("professional");
 
   const metrics = useMemo(() => {
     const waiting = tickets.filter((ticket) => reviewStatuses.includes(ticket.status)).length;
@@ -443,6 +445,57 @@ export function ApprovalDashboard() {
     }
   }
 
+  async function createManualDraft() {
+    if (manualEmail.trim().length < 10) {
+      setActionState({ message: "Paste the customer email before generating a draft.", tone: "warn" });
+      return;
+    }
+
+    setBusy("manual-draft");
+    try {
+      const created = await requestJson<TicketResponse>("/api/tickets/manual", {
+        method: "POST",
+        body: JSON.stringify({
+          customerName: manualCustomer || undefined,
+          subject: manualSubject || undefined,
+          body: manualEmail,
+          responseTone,
+        }),
+      });
+      upsertTicket(created.ticket);
+
+      const drafted = await requestJson<TicketResponse>(`/api/tickets/${created.ticket.id}/draft`, {
+        method: "POST",
+      });
+      upsertTicket(drafted.ticket);
+      setDraftTextById((current) => ({
+        ...current,
+        [drafted.ticket.id]: drafted.ticket.finalResponse ?? drafted.ticket.aiDraft ?? "",
+      }));
+      setManualEmail("");
+      setManualSubject("");
+      setManualCustomer("");
+      setActionState({ message: "Draft generated from the pasted customer email.", tone: "ok" });
+    } catch (error) {
+      setActionState({
+        message: error instanceof Error ? error.message : "Could not generate the draft.",
+        tone: "error",
+      });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function copyDraft() {
+    if (!draftText.trim()) return;
+    try {
+      await navigator.clipboard.writeText(draftText);
+      setActionState({ message: "Response copied. Paste it into your email application.", tone: "ok" });
+    } catch {
+      setActionState({ message: "Copy failed. Select the response text and copy it manually.", tone: "error" });
+    }
+  }
+
   async function draftResponse() {
     if (!selected) return;
     setBusy("draft");
@@ -502,34 +555,6 @@ export function ApprovalDashboard() {
     }
   }
 
-  async function approveTicket() {
-    if (!selected) return;
-    setBusy("approve");
-    try {
-      const data = await requestJson<TicketResponse>(`/api/tickets/${selected.id}/approve`, {
-        method: "POST",
-        body: JSON.stringify({ passcode, finalResponse: draftText }),
-      });
-      upsertTicket(data.ticket);
-      setActionState({
-        message:
-          data.ticket.status === "sent"
-            ? "Approved response sent through Resend."
-            : data.ticket.status === "simulated"
-              ? "Approved response recorded in staged delivery mode."
-              : "Approval completed with a delivery issue.",
-        tone: data.ticket.status === "failed" ? "error" : "ok",
-      });
-    } catch (error) {
-      setActionState({
-        message: error instanceof Error ? error.message : "Could not approve ticket.",
-        tone: "error",
-      });
-    } finally {
-      setBusy(null);
-    }
-  }
-
   useEffect(() => {
     let isActive = true;
 
@@ -569,10 +594,10 @@ export function ApprovalDashboard() {
             <div className="min-w-0">
               <div className="mb-1.5 flex items-center gap-2 text-xs font-semibold uppercase text-teal-700">
                 <Workflow className="size-4" />
-                n8n intake | AI draft | approval gate
+                paste customer email | AI draft | agent review
               </div>
               <h1 className="text-[26px] font-semibold leading-tight text-slate-950">
-                Support Automation Control Center
+                Fintech Email Reply Assistant
               </h1>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -597,12 +622,12 @@ export function ApprovalDashboard() {
             </div>
           </div>
 
-          <div className="grid gap-2 md:grid-cols-5">
+          <div className="grid gap-2 md:grid-cols-4">
             <StatusStripItem
-              icon={Route}
-              label="Webhook"
-              value={webhookEvidence.security === "verified" ? "verified" : webhookEvidence.security === "not_configured" ? "dev mode" : "not captured"}
-              tone={webhookEvidence.security === "verified" ? "teal" : "slate"}
+              icon={Clipboard}
+              label="Intake"
+              value="copy & paste"
+              tone="teal"
             />
             <StatusStripItem
               icon={Bot}
@@ -622,18 +647,59 @@ export function ApprovalDashboard() {
               value={selectedSafety ? selectedSafety.severity === "none" ? "pass" : selectedSafety.severity : "pending"}
               tone={selectedSafety?.severity === "high" ? "red" : selectedSafety ? "green" : "slate"}
             />
-            <StatusStripItem
-              icon={Send}
-              label="Delivery"
-              value={selected?.sendProvider ? displayLabel(selected.sendProvider) : "pending"}
-              tone={selected?.sendProvider ? "green" : "slate"}
-            />
           </div>
         </div>
       </div>
 
       <div className="mx-auto grid max-w-[1680px] items-start gap-5 px-4 py-5 sm:px-6 lg:h-[calc(100vh-9.75rem)] lg:min-h-[720px] lg:grid-cols-[360px_minmax(0,1fr)] lg:overflow-hidden lg:px-8">
         <section className="rounded-md border border-slate-200 bg-white shadow-sm lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:overflow-hidden">
+          <div className="border-b border-slate-200 bg-teal-50/60 p-4">
+            <div className="mb-3">
+              <p className="font-semibold text-slate-950">Paste customer email</p>
+              <p className="mt-1 text-xs leading-5 text-slate-600">No mailbox connection is required. Customer details are optional.</p>
+            </div>
+            <div className="space-y-2">
+              <input
+                className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                value={manualCustomer}
+                onChange={(event) => setManualCustomer(event.target.value)}
+                placeholder="Customer name (optional)"
+              />
+              <input
+                className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                value={manualSubject}
+                onChange={(event) => setManualSubject(event.target.value)}
+                placeholder="Email subject (optional)"
+              />
+              <textarea
+                className="min-h-32 w-full resize-y rounded-md border border-slate-200 bg-white p-3 text-sm leading-6 outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                value={manualEmail}
+                onChange={(event) => setManualEmail(event.target.value)}
+                placeholder="Paste the complete customer email here…"
+              />
+              <div className="grid grid-cols-[1fr_auto] gap-2">
+                <select
+                  className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-teal-500"
+                  value={responseTone}
+                  onChange={(event) => setResponseTone(event.target.value)}
+                >
+                  <option value="professional">Professional</option>
+                  <option value="empathetic">Empathetic</option>
+                  <option value="apology">Apology</option>
+                  <option value="firm">Firm</option>
+                  <option value="escalation">Escalation</option>
+                </select>
+                <button
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-teal-700 px-4 text-sm font-medium text-white hover:bg-teal-800 disabled:opacity-60"
+                  onClick={createManualDraft}
+                  disabled={busy !== null || manualEmail.trim().length < 10}
+                >
+                  {busy === "manual-draft" ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                  Generate
+                </button>
+              </div>
+            </div>
+          </div>
           <div className="border-b border-slate-200 p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 font-semibold">
@@ -657,7 +723,7 @@ export function ApprovalDashboard() {
               <EmptyState
                 icon={Inbox}
                 title={tickets.length === 0 ? "No tickets yet" : "No tickets in this view"}
-                text={tickets.length === 0 ? "Trigger the n8n webhook or load samples." : "Change the queue filter."}
+                text={tickets.length === 0 ? "Paste a customer email above to create the first draft." : "Change the queue filter."}
               />
             ) : (
               filteredTickets.map((ticket) => (
@@ -690,7 +756,7 @@ export function ApprovalDashboard() {
                       {selected.subject}
                     </h2>
                     <p className="mt-1 text-sm text-slate-500">
-                      {selected.customerName} | {selected.customerEmail}
+                      {selected.customerName}{selected.source !== "manual" ? ` | ${selected.customerEmail}` : ""}
                     </p>
                   </div>
                   <button
@@ -758,21 +824,7 @@ export function ApprovalDashboard() {
                       onChange={(event) => updateDraftText(event.target.value)}
                       placeholder="Draft appears here after classification."
                     />
-                    <div className="mt-4 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-                      <label className="block min-w-0 max-w-sm flex-1 text-xs font-semibold uppercase text-slate-500" htmlFor="passcode">
-                        Approval passcode
-                        <div className="mt-2 flex h-10 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-100">
-                          <KeyRound className="size-4 text-slate-400" />
-                          <input
-                            id="passcode"
-                            className="min-w-0 flex-1 text-sm font-normal normal-case outline-none"
-                            value={passcode}
-                            onChange={(event) => setPasscode(event.target.value)}
-                            type="password"
-                            placeholder="Enter passcode"
-                          />
-                        </div>
-                      </label>
+                    <div className="mt-4 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-end">
                       <div className="flex flex-col gap-2 sm:flex-row">
                         <button
                           className="inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
@@ -785,12 +837,12 @@ export function ApprovalDashboard() {
                         </button>
                         <button
                           className="inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md bg-slate-950 px-4 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                          onClick={approveTicket}
+                          onClick={copyDraft}
                           disabled={busy !== null || !draftText.trim()}
-                          title="Approve and send"
+                          title="Copy response"
                         >
-                          {busy === "approve" ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-                          Approve
+                          <Clipboard className="size-4" />
+                          Copy response
                         </button>
                       </div>
                     </div>

@@ -446,12 +446,17 @@ function policyPrompt(grounding?: PolicyGrounding) {
 }
 
 function ticketPrompt(ticket: TicketRecord, grounding?: PolicyGrounding) {
+  const requestedTone =
+    typeof ticket.metadata?.responseTone === "string"
+      ? ticket.metadata.responseTone
+      : "professional";
   return [
     `Customer name: ${ticket.customerName}`,
     `Customer email: ${ticket.customerEmail}`,
     `Source: ${ticket.source}`,
     `Subject: ${ticket.subject}`,
     `Message:\n${ticket.body}`,
+    `Requested response tone: ${requestedTone}`,
     `Internal metadata:\n${JSON.stringify(ticket.metadata ?? {}, null, 2)}`,
     `Approved policy context:\n${policyPrompt(grounding)}`,
   ].join("\n\n");

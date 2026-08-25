@@ -10,6 +10,15 @@ export const inboundTicketSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
+export const manualTicketSchema = z.object({
+  customerName: z.string().trim().max(120).optional().default("Customer"),
+  subject: z.string().trim().max(240).optional().default("Customer support request"),
+  body: z.string().trim().min(10, "Paste at least 10 characters from the customer email"),
+  responseTone: z
+    .enum(["professional", "empathetic", "apology", "firm", "escalation"])
+    .default("professional"),
+});
+
 export const updateTicketSchema = z.object({
   finalResponse: z.string().trim().min(1).optional(),
 });
