@@ -501,10 +501,16 @@ async function generateWithOpenAiCompatible(
   options: { provider: "groq"; apiKey: string; model: string; baseUrl: string; redraft?: boolean },
 ): Promise<DraftResult> {
   const startedAt = Date.now();
-  const models = [...new Set([options.model, "openai/gpt-oss-20b"])];
+  const attempts = [
+    { model: options.model, strictJson: true },
+    ...(options.model === "openai/gpt-oss-20b"
+      ? []
+      : [{ model: "openai/gpt-oss-20b", strictJson: true }]),
+    { model: "openai/gpt-oss-20b", strictJson: false },
+  ];
   let lastError = "Groq generation failed.";
 
-  for (const model of models) {
+  for (const { model, strictJson } of attempts) {
     try {
       const response = await fetch(`${options.baseUrl.replace(/\/$/, "")}/chat/completions`, {
         method: "POST",
@@ -513,7 +519,7 @@ async function generateWithOpenAiCompatible(
           model,
           temperature: 0.15,
           max_tokens: 1200,
-          response_format: { type: "json_object" },
+          ...(strictJson ? { response_format: { type: "json_object" } } : {}),
           messages: [
             { role: "system", content: draftSystemPrompt },
             { role: "user", content: ticketPrompt(ticket, grounding, options.redraft) },
